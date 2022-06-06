@@ -176,7 +176,7 @@ class TreeManagement:
             if isinstance(item, FileItem):
                 file_path, file_type = item._add_to_cache()
                 # TODO: Check for paired-types (e.g. .hdr/.img, .mhd/.raw)
-                # TODO:     - if so, add both to cache_files
+                # TODO:     - if so, add both to cache_files to the same directory
 
                 self.cache_files[item.container.id] = {
                     "file_path": str(file_path),

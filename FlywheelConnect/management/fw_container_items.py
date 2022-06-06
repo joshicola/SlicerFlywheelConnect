@@ -356,6 +356,8 @@ class FileItem(ContainerItem):
         """
         file_parent = self.parent_item.parent().container
         file_path = Path(os.path.expanduser("~") + "/flywheelIO/")
+        # TODO: Review this structure when we have paired files (.mhd/.raw)
+        #       How does this affect file-versioning?
 
         for par in ["group", "project", "subject", "session", "acquisition"]:
             if file_parent.parents[par]:

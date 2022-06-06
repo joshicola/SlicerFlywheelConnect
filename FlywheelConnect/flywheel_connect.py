@@ -684,6 +684,9 @@ class flywheel_connectTest(ScriptedLoadableModuleTest):
     Uses ScriptedLoadableModuleTest base class, available at:
     https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
     """
+    # TODO: Define multiple testing scenarios.
+    #       * Have "developer" integration tests run with respects to a validated fw instance
+    #       * Have end-user-runnable integration tests run with certain project requirements.
 
     def setUp(self):
         """
