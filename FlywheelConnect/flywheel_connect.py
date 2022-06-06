@@ -1,16 +1,16 @@
-import shutil
 import datetime
 import logging
 import os
 import os.path as op
+import shutil
 import tempfile
 from glob import glob
-from zipfile import ZipFile
 from importlib import import_module
 from pathlib import Path
+from zipfile import ZipFile
 
-import DICOMLib
 import ctk
+import DICOMLib
 import qt
 import slicer
 import vtk
@@ -203,6 +203,7 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
         self.groupSelector.setMinimumWidth(200)
         dataFormLayout.addWidget(self.groupSelector)
 
+        # TODO: Add a check box to switch to Collections under a group.
         #
         # project Selector ComboBox
         #
@@ -416,11 +417,16 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
             file_type = file_dict["file_type"]
             # TODO: How do we cascade on different file-types
             #       e.g. check "model" if "volume" has failed?
+            #       FW might have metadata for these types?
             # Check for volume
             if self.is_slicer_type("volume", file_path):
                 try:
                     slicer.util.loadVolume(file_path)
+                    # TODO: Put "continue" here to skip other file types
                 except Exception as e:
+                    # TODO: Log error instead of printing
+                    #       May want to send these to the Slicer Log.
+                    #       Cascade to other file-types
                     print("Not a valid Volume type.")
             # Check for model
             elif self.is_slicer_type("model", file_path):

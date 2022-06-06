@@ -2,14 +2,8 @@ from PythonQt import QtGui
 from PythonQt.QtCore import Qt
 from qt import QAbstractItemView, QItemSelectionModel, QMenu
 
-from .fw_container_items import (
-    AnalysisFolderItem,
-    AnalysisItem,
-    ContainerItem,
-    FileItem,
-    GroupItem,
-    ProjectItem,
-)
+from .fw_container_items import (AnalysisFolderItem, AnalysisItem, ContainerItem, FileItem,
+                                 GroupItem, ProjectItem)
 
 
 class TreeManagement:
@@ -181,6 +175,8 @@ class TreeManagement:
             item = self.source_model.itemFromIndex(index)
             if isinstance(item, FileItem):
                 file_path, file_type = item._add_to_cache()
+                # TODO: Check for paired-types (e.g. .hdr/.img, .mhd/.raw)
+                # TODO:     - if so, add both to cache_files
 
                 self.cache_files[item.container.id] = {
                     "file_path": str(file_path),
