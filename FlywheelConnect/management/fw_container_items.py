@@ -435,6 +435,21 @@ class FileItem(ContainerItem):
         else:
             return None
 
+    def create_symlink(self, file_path):
+        """
+        Create a symbolic link to the file in its parent container directory.
+
+        This is instead of caching the file to the file_id directory.
+
+        Args:
+            file_path (pathlib.Path): Path to file to link to.
+        """
+        symlink_path = file_path.parent.parent / file_path.name
+        if symlink_path.exists():
+            os.remove(symlink_path)
+        symlink_path.symlink_to(file_path)
+        return symlink_path
+
     def _is_cached(self):
         """
         Check if file is cached.
@@ -461,6 +476,9 @@ class FileItem(ContainerItem):
             self.icon_path = "Resources/Icons/file_cached.png"
             self.setToolTip("File is cached.")
             self._set_icon()
+        # Always update the symbolic link to the latest version of the file
+        symlink_path = self.create_symlink(file_path)
+
         # Check if this file is of a paired type
         if self._is_paired_type():
             # attempt to find the paired type
@@ -470,5 +488,6 @@ class FileItem(ContainerItem):
                 file_parent.download_file(
                     paired_file_name, str(file_path.parents[0] / paired_file_name)
                 )
+                self.create_symlink(file_path.parents[0] / paired_file_name)
 
-        return file_path, self.file_type
+        return symlink_path, self.file_type
