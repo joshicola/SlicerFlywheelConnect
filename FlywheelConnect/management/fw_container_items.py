@@ -417,6 +417,24 @@ class FileItem(ContainerItem):
         """
         return self.container.name.split(".")[-1] in PAIRED_FILE_TYPES.keys()
 
+    def _get_paired_file_item(self):
+        """
+        Get the paired file item.
+
+        Returns:
+            FileItem: Paired file item.
+        """
+        file_parent = self.parent_item.parent().container
+        fl_ext = self.container.name.split(".")[-1]
+        paired_ext = PAIRED_FILE_TYPES[fl_ext]
+        paired_file_name = self.container.name[: -len(fl_ext)] + paired_ext
+        paired_file_obj = file_parent.get_file(paired_file_name)
+        if paired_file_obj:
+            for i in range(self.parent_item.rowCount()):
+                if self.parent_item.child(i).container.id == paired_file_obj.id:
+                    return self.parent_item.child(i)
+        return None
+
     def _get_paired_file(self):
         """
         Get the pair of current file, if exists
@@ -481,13 +499,12 @@ class FileItem(ContainerItem):
 
         # Check if this file is of a paired type
         if self._is_paired_type():
+            # TODO: I could create a new FileItem object and then download it
+            #       FileItem constuctor take parent and file_obj as arguments.
+            #       ...Or could I get the file from the Tree?... with the file_id?
             # attempt to find the paired type
-            paired_file_name = self._get_paired_file()
-            # if found, download the adjoining pair into original directory
-            if paired_file_name:
-                file_parent.download_file(
-                    paired_file_name, str(file_path.parents[0] / paired_file_name)
-                )
-                self.create_symlink(file_path.parents[0] / paired_file_name)
+            paired_file_item = self._get_paired_file_item()
+            if paired_file_item:
+                paired_file_item._add_to_cache()
 
         return symlink_path, self.file_type
