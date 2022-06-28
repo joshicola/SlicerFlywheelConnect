@@ -1,3 +1,7 @@
+import logging
+
+import xmltodict
+from numpy import isin
 from PythonQt import QtGui
 from PythonQt.QtCore import Qt
 from qt import QAbstractItemView, QItemSelectionModel, QMenu
@@ -11,6 +15,9 @@ from .fw_container_items import (
     GroupItem,
     ProjectItem,
 )
+from .slicer_constants import PAIRED_FILE_TYPES
+
+log = logging.getLogger(__name__)
 
 
 class TreeManagement:
@@ -70,19 +77,23 @@ class TreeManagement:
         """
         groups = self.main_window.fw_client.groups()
         for group in groups:
-            group_item = GroupItem(self.source_model, group)
+            group_item = GroupItem(self.source_model, group, self.main_window.cache_dir)
 
     def populateTreeFromCollection(self, collection):
         """
         Populate Tree from a single Collection
         """
-        collection_item = CollectionItem(self.source_model, collection)
+        collection_item = CollectionItem(
+            self.source_model, collection, self.main_window.cache_dir
+        )
 
     def populateTreeFromProject(self, project):
         """
         Populate Tree from a single Project
         """
-        project_item = ProjectItem(self.source_model, project)
+        project_item = ProjectItem(
+            self.source_model, project, self.main_window.cache_dir
+        )
 
     def get_id(self, index):
         """
@@ -177,17 +188,127 @@ class TreeManagement:
         if hasattr(item, "_on_expand"):
             item._on_expand()
 
+    def _is_paired_type(self, file_item):
+        """
+        Determine if this file is of a paired type.
+
+        Args:
+            file_item (FileItem): File item to test if it has a data pair.
+        Returns:
+            bool: True or False of paired type.
+        """
+        return file_item.container.name.split(".")[-1] in PAIRED_FILE_TYPES.keys()
+
+    def _get_paired_file_item(self, file_item):
+        """
+        Get the pair of current file, if exists
+
+        Args:
+            file_item (FileItem): File item to test if it has a data pair.
+
+        Returns:
+            FileItem: Object reference to paired file item or None
+        """
+
+        parent_item = file_item.parent()
+        all_file_names = [
+            parent_item.child(i).text() for i in range(parent_item.rowCount())
+        ]
+
+        fl_ext = file_item.container.name.split(".")[-1]
+        paired_ext = PAIRED_FILE_TYPES[fl_ext]
+        paired_file_name = file_item.container.name[: -len(fl_ext)] + paired_ext
+
+        if paired_file_name in all_file_names:
+            paired_index = all_file_names.index(paired_file_name)
+            return parent_item.child(paired_index)
+        else:
+            msg = (
+                f"The pair for {file_item.text()}, {paired_file_name}, cannot be found."
+            )
+            log.info(msg)
+            return None
+
+    def _process_mrml_storage_node(self, parent_item, node):
+        """
+        Cache file item related to mrml storage node, if found in parent item.
+
+        Args:
+            parent_item (FolderItem): Folder item containing siblings of node
+            node (dict): Dictionary representation of mrml node.
+        """
+        all_file_names = [
+            parent_item.child(i).text() for i in range(parent_item.rowCount())
+        ]
+        if node["@fileName"] in all_file_names:
+            dep_index = all_file_names.index(node["@fileName"])
+            dep_item = parent_item.child(dep_index)
+            dep_item._add_to_cache()
+            if self._is_paired_type(dep_item):
+                paired_item = self._get_paired_file_item(dep_item)
+                if paired_item:
+                    paired_item._add_to_cache()
+        else:
+            file_name = node["@fileName"]
+            msg = (
+                f"The mrml dependency file, {file_name}, "
+                "was not found in sibling files."
+            )
+            log.info(msg)
+
+    def _get_mrml_dependencies(self, file_item: FileItem):
+        """
+        Retrieve the MRML dependencies from the sibling files.
+
+        Args:
+            file_item (FileItem): MRML File item to retrieve dependencies for.
+        """
+        parent_item = file_item.parent()
+
+        with open(file_item._get_cache_path()) as f:
+            mrml_data = xmltodict.parse(f.read())
+
+        for key in mrml_data["MRML"].keys():
+            if key.endswith("Storage"):
+                if isinstance(mrml_data["MRML"][key], dict):
+                    node = mrml_data["MRML"][key]
+                    self._process_mrml_storage_node(parent_item, node)
+                else:
+                    for node in mrml_data["MRML"][key]:
+                        self._process_mrml_storage_node(parent_item, node)
+
+    def cache_item_dependencies(self, file_item):
+        """
+        Cache the file items dependencies.
+
+        Paired files (.mhd/.raw, .hdr/img)
+        MRML files with dependencies.
+
+        Args:
+            file_item (FileItem): A file item object to check for dependencies
+        """
+        if self._is_paired_type(file_item):
+            paired_file_item = self._get_paired_file_item(file_item)
+            if paired_file_item:
+                _, _ = paired_file_item._add_to_cache()
+        if file_item.text().endswith(".mrml"):
+            self._get_mrml_dependencies(file_item)
+
     def cache_selected_for_open(self):
         """
         Cache selected files if necessary for opening in application.
         """
         tree = self.treeView
         self.cache_files.clear()
+        # TODO: This is where the finding of paired files would go
+        #       We would not want to attempt to load a .raw file.
         for index in tree.selectedIndexes():
-            file_path = self.main_window.CacheDir
             item = self.source_model.itemFromIndex(index)
             if isinstance(item, FileItem):
                 file_path, file_type = item._add_to_cache()
+
+                self.cache_item_dependencies(item)
+                # pair detection here.
 
                 self.cache_files[item.container.id] = {
                     "file_path": str(file_path),

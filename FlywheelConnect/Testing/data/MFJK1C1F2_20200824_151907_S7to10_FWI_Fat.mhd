@@ -1,0 +1,14 @@
+% *****************************************************
+ObjectType = Image
+NDims = 3
+BinaryData = True
+BinaryDataByteOrderMSB = False
+CompressedData = False
+TransformMatrix = 1 0 0 0 1 0 0 0 1
+Position = 0.7149500000 -1.2932400000 -12.6160463154
+AnatomicalOrientation = RAI
+ElementSpacing = 0.075000 0.100000 0.089848
+DimSize = 128 64 256
+ElementType = MET_FLOAT
+ElementDataFile = MFJK1C1F2_20200824_151907_S7to10_FWI_Fat.raw
+ElementNumberOfChannels = 1

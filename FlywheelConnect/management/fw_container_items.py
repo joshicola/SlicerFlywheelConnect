@@ -1,11 +1,12 @@
+import logging
 import os
 from pathlib import Path
 
 from PythonQt import QtGui
-from PythonQt.QtCore import Qt
-from qt import QAbstractItemView
 
-from .slicer_constants import PAIRED_FILE_TYPES
+log = logging.getLogger(__name__)
+
+RESOURCE_FOLDER = Path("Resources/Icons")
 
 
 class FolderItem(QtGui.QStandardItem):
@@ -23,7 +24,7 @@ class FolderItem(QtGui.QStandardItem):
         """
         super(FolderItem, self).__init__()
         self.source_dir = parent_item.source_dir
-        icon_path = "Resources/Icons/folder.png"
+        icon_path = RESOURCE_FOLDER / "folder.png"
         icon = QtGui.QIcon(str(self.source_dir / icon_path))
         self.parent_item = parent_item
         self.parent_container = parent_item.container
@@ -38,7 +39,7 @@ class AnalysisFolderItem(FolderItem):
     Folder Item specifically for analyses.
     """
 
-    def __init__(self, parent_item):
+    def __init__(self, parent_item, cache_dir):
         """
         Initialize AnalysisFolderItem unpopulated.
 
@@ -47,9 +48,10 @@ class AnalysisFolderItem(FolderItem):
                 (projects, subjects, sessions, acquisitions)
         """
         folder_name = "ANALYSES"
+        self.cache_dir = cache_dir
         super(AnalysisFolderItem, self).__init__(parent_item, folder_name)
         # TODO: put folder w/ download icon
-        icon_path = "Resources/Icons/dwnld-folder.png"
+        icon_path = RESOURCE_FOLDER / "dwnld-folder.png"
         icon = QtGui.QIcon(str(self.source_dir / icon_path))
         self.setIcon(icon)
         # TODO: ensure that these work.
@@ -58,13 +60,13 @@ class AnalysisFolderItem(FolderItem):
     def _dblclicked(self):
         if hasattr(self.parent_container, "analyses"):
             self.parent_container = self.parent_container.reload()
-            icon_path = "Resources/Icons/folder.png"
+            icon_path = RESOURCE_FOLDER / "folder.png"
             icon = QtGui.QIcon(str(self.source_dir / icon_path))
             self.setIcon(icon)
             if not self.hasChildren() and self.parent_container.analyses:
 
                 for analysis in self.parent_container.analyses:
-                    AnalysisItem(self, analysis)
+                    AnalysisItem(self, analysis, self.cache_dir)
 
 
 class ContainerItem(QtGui.QStandardItem):
@@ -72,7 +74,7 @@ class ContainerItem(QtGui.QStandardItem):
     TreeView node to host all common functionality for Flywheel containers.
     """
 
-    def __init__(self, parent_item, container):
+    def __init__(self, parent_item, container, cache_dir):
         """
         Initialize new container item with its parent and flywheel container object.
 
@@ -81,12 +83,15 @@ class ContainerItem(QtGui.QStandardItem):
             container (flywheel.Container): Flywheel container (e.g. group, project,...)
         """
         super(ContainerItem, self).__init__()
-        self.has_analyses = False
+        self.cache_dir = cache_dir
+        if not hasattr(self, "has_analyses"):
+            self.has_analyses = False
         self.parent_item = parent_item
         self.container = container
         self.source_dir = Path(os.path.realpath(__file__)).parents[1]
         title = container.label
         self.setData(container.id)
+        log.debug("Found %s %s", container.container_type, container.label)
         self.setText(title)
         self._set_icon()
         self.parent_item.appendRow(self)
@@ -116,14 +121,14 @@ class ContainerItem(QtGui.QStandardItem):
         if hasattr(self.container, "files"):
             if not self.filesItem.hasChildren() and self.container.files:
                 for fl in self.container.files:
-                    FileItem(self.filesItem, fl)
+                    FileItem(self.filesItem, fl, self.cache_dir)
 
     def _analyses_folder(self):
         """
         Create "ANALYSES" folder, if container has analyses object.
         """
-        if hasattr(self.container, "analyses"):
-            self.analysesItem = AnalysisFolderItem(self)
+        if hasattr(self.container, "analyses") and self.has_analyses:
+            self.analysesItem = AnalysisFolderItem(self, self.cache_dir)
 
     def _child_container_folder(self):
         """
@@ -145,7 +150,7 @@ class GroupItem(ContainerItem):
     TreeView Node for the functionality of group containers.
     """
 
-    def __init__(self, parent_item, group):
+    def __init__(self, parent_item, group, cache_dir):
         """
         Initialize Group Item with parent and group container.
 
@@ -153,10 +158,10 @@ class GroupItem(ContainerItem):
             parent_item (QtGui.QStandardItemModel): Top-level tree item or model.
             group (flywheel.Group): Flywheel group container to attach as tree node.
         """
-        self.icon_path = "Resources/Icons/group.png"
+        self.icon_path = RESOURCE_FOLDER / "group.png"
         self.child_container_name = "PROJECTS"
         self.group = group
-        super(GroupItem, self).__init__(parent_item, group)
+        super(GroupItem, self).__init__(parent_item, group, cache_dir)
 
     def _list_projects(self):
         """
@@ -179,7 +184,7 @@ class CollectionItem(ContainerItem):
     TreeView Node for the functionality of Collection containers.
     """
 
-    def __init__(self, parent_item, collection):
+    def __init__(self, parent_item, collection, cache_dir):
         """
         Initialize Collection Item with parent and collection container.
 
@@ -188,10 +193,11 @@ class CollectionItem(ContainerItem):
             collection (flywheel.Collection): Flywheel collection container to attach as
                 tree node.
         """
-        self.icon_path = "Resources/Icons/collection.png"
+        self.icon_path = RESOURCE_FOLDER / "collection.png"
         self.child_container_name = "SESSIONS"
-        super(CollectionItem, self).__init__(parent_item, collection)
-        self.has_analyses = True
+        # Collections do not have accessible Analyses
+        self.has_analyses = False
+        super(CollectionItem, self).__init__(parent_item, collection, cache_dir)
         self.collection = self.container
 
     def _list_sessions(self):
@@ -200,7 +206,7 @@ class CollectionItem(ContainerItem):
         """
         if not self.folder_item.hasChildren():
             for session in self.collection.sessions():
-                SessionItem(self.folder_item, session)
+                SessionItem(self.folder_item, session, self.cache_dir)
 
     def _on_expand(self):
         """
@@ -215,7 +221,7 @@ class ProjectItem(ContainerItem):
     TreeView Node for the functionality of Project containers.
     """
 
-    def __init__(self, parent_item, project):
+    def __init__(self, parent_item, project, cache_dir):
         """
         Initialize Project Item with parent and project container.
 
@@ -224,10 +230,10 @@ class ProjectItem(ContainerItem):
             project (flywheel.Project): Flywheel project container to attach as tree
                 node.
         """
-        self.icon_path = "Resources/Icons/project.png"
+        self.icon_path = RESOURCE_FOLDER / "project.png"
         self.child_container_name = "SUBJECTS"
-        super(ProjectItem, self).__init__(parent_item, project)
         self.has_analyses = True
+        super(ProjectItem, self).__init__(parent_item, project, cache_dir)
         self.project = self.container
 
     def _list_subjects(self):
@@ -236,7 +242,7 @@ class ProjectItem(ContainerItem):
         """
         if not self.folder_item.hasChildren():
             for subject in self.project.subjects():
-                SubjectItem(self.folder_item, subject)
+                SubjectItem(self.folder_item, subject, self.cache_dir)
 
     def _on_expand(self):
         """
@@ -251,7 +257,7 @@ class SubjectItem(ContainerItem):
     TreeView Node for the functionality of Subject containers.
     """
 
-    def __init__(self, parent_item, subject):
+    def __init__(self, parent_item, subject, cache_dir):
         """
         Initialize Subject Item with parent and project container.
 
@@ -260,10 +266,10 @@ class SubjectItem(ContainerItem):
             subject (flywheel.Subject): Flywheel subject container to attach as tree
                 node.
         """
-        self.icon_path = "Resources/Icons/subject.png"
+        self.icon_path = RESOURCE_FOLDER / "subject.png"
         self.child_container_name = "SESSIONS"
-        super(SubjectItem, self).__init__(parent_item, subject)
         self.has_analyses = True
+        super(SubjectItem, self).__init__(parent_item, subject, cache_dir)
         self.subject = self.container
 
     def _list_sessions(self):
@@ -272,7 +278,7 @@ class SubjectItem(ContainerItem):
         """
         if not self.folder_item.hasChildren():
             for session in self.subject.sessions():
-                SessionItem(self.folder_item, session)
+                SessionItem(self.folder_item, session, self.cache_dir)
 
     def _on_expand(self):
         """
@@ -287,7 +293,7 @@ class SessionItem(ContainerItem):
     TreeView Node for the functionality of Session containers.
     """
 
-    def __init__(self, parent_item, session):
+    def __init__(self, parent_item, session, cache_dir):
         """
         Initialize Session Item with parent and subject container.
 
@@ -296,10 +302,10 @@ class SessionItem(ContainerItem):
             session (flywheel.Session): Flywheel session container to attach as tree
                 node.
         """
-        self.icon_path = "Resources/Icons/session.png"
+        self.icon_path = RESOURCE_FOLDER / "session.png"
         self.child_container_name = "ACQUISITIONS"
-        super(SessionItem, self).__init__(parent_item, session)
         self.has_analyses = True
+        super(SessionItem, self).__init__(parent_item, session, cache_dir)
         self.session = self.container
 
     def _list_acquisitions(self):
@@ -308,7 +314,7 @@ class SessionItem(ContainerItem):
         """
         if not self.folder_item.hasChildren():
             for acquisition in self.session.acquisitions():
-                AcquisitionItem(self.folder_item, acquisition)
+                AcquisitionItem(self.folder_item, acquisition, self.cache_dir)
 
     def _on_expand(self):
         """
@@ -323,18 +329,19 @@ class AcquisitionItem(ContainerItem):
     TreeView Node for the functionality of Acquisition containers.
     """
 
-    def __init__(self, parent_item, acquisition):
+    def __init__(self, parent_item, acquisition, cache_dir):
         """
         Initialize Acquisition Item with parent and Acquisition container.
 
         Args:
             parent_item (FolderItem): The folder item tree node that is the parent.
-            acquisition (flywheel.Acquisition): Flywheel acquisitin container to attach
+            acquisition (flywheel.Acquisition): Flywheel acquisition container to attach
                 as tree node.
         """
-        self.icon_path = "Resources/Icons/acquisition.png"
-        super(AcquisitionItem, self).__init__(parent_item, acquisition)
+        self.cache_dir = cache_dir
+        self.icon_path = RESOURCE_FOLDER / "acquisition.png"
         self.has_analyses = True
+        super(AcquisitionItem, self).__init__(parent_item, acquisition, cache_dir)
         self.acquisition = self.container
 
 
@@ -343,7 +350,7 @@ class AnalysisItem(ContainerItem):
     TreeView Node for the functionality of Analysis objects.
     """
 
-    def __init__(self, parent_item, analysis):
+    def __init__(self, parent_item, analysis, cache_dir):
         """
         Initialize Subject Item with parent and analysis object.
 
@@ -352,8 +359,9 @@ class AnalysisItem(ContainerItem):
             analysis (flywheel.Analysis): Flywheel analysis object to attach as tree
                 node.
         """
-        self.icon_path = "Resources/Icons/analysis.png"
-        super(AnalysisItem, self).__init__(parent_item, analysis)
+        self.cache_dir = cache_dir
+        self.icon_path = RESOURCE_FOLDER / "analysis.png"
+        super(AnalysisItem, self).__init__(parent_item, analysis, cache_dir)
 
 
 class FileItem(ContainerItem):
@@ -361,7 +369,7 @@ class FileItem(ContainerItem):
     TreeView Node for the functionality of File objects.
     """
 
-    def __init__(self, parent_item, file_obj):
+    def __init__(self, parent_item, file_obj, cache_dir):
         """
         Initialize File Item with parent and file object.
 
@@ -369,21 +377,25 @@ class FileItem(ContainerItem):
             parent_item (FolderItem): The folder item tree node that is the parent.
             file_obj (flywheel.FileEntry): File object of the tree node.
         """
+
+        # TODO: Do we want to put a label on the filename to indicate version?
+        #       i.e. (i) for i>1?
         file_obj.label = file_obj.name
         self.parent_item = parent_item
         self.container = file_obj
-
         self.file = file_obj
         self.file_type = file_obj.type
+        self.cache_dir = cache_dir
+        self.icon_path = RESOURCE_FOLDER / "file.png"
+        super(FileItem, self).__init__(parent_item, file_obj, cache_dir)
+
         if self._is_cached():
-            self.icon_path = "Resources/Icons/file_cached.png"
-        else:
-            self.icon_path = "Resources/Icons/file.png"
-        super(FileItem, self).__init__(parent_item, file_obj)
-        if self._is_cached():
+            self.icon_path = RESOURCE_FOLDER / "file_cached.png"
             self.setToolTip("File is cached.")
         else:
             self.setToolTip("File is not cached")
+            self.icon_path = RESOURCE_FOLDER / "file.png"
+        self._set_icon()
 
     def _get_cache_path(self):
         """
@@ -393,71 +405,29 @@ class FileItem(ContainerItem):
             pathlib.Path: Cache Path to file indicated.
         """
         file_parent = self.parent_item.parent().container
-        file_path = Path(os.path.expanduser("~") + "/flywheelIO/")
-
+        # TODO: Should probably turn this into a PATH variable ASAP
+        file_path = Path(self.cache_dir)
         for par in ["group", "project", "subject", "session", "acquisition"]:
-            if file_parent.parents[par]:
+            if (
+                not isinstance(self.parent_item.parent(), CollectionItem)
+                and file_parent.parents[par]
+            ):
                 file_path /= file_parent.parents[par]
         file_path /= file_parent.id
         file_path /= self.container.id
         file_path /= self.container.name
         return file_path
 
-    # TODO: If this "Paired file" paradigm is not sufficient for most use cases
-    #       we may want to go to a more general method:
-    #       * cache all files to the file_id directory
-    #       * create symlinks in the acquisition_id directory to files
-    #       * update those symlinks when files from new versions are available
-    def _is_paired_type(self):
-        """
-        Determine if this file is of a paired type.
-
-        Returns:
-            bool: True or False of paired type.
-        """
-        return self.container.name.split(".")[-1] in PAIRED_FILE_TYPES.keys()
-
-    def _get_paired_file_item(self):
-        """
-        Get the paired file item.
-
-        Returns:
-            FileItem: Paired file item.
-        """
-        file_parent = self.parent_item.parent().container
-        fl_ext = self.container.name.split(".")[-1]
-        paired_ext = PAIRED_FILE_TYPES[fl_ext]
-        paired_file_name = self.container.name[: -len(fl_ext)] + paired_ext
-        paired_file_obj = file_parent.get_file(paired_file_name)
-        if paired_file_obj:
-            for i in range(self.parent_item.rowCount()):
-                if self.parent_item.child(i).container.id == paired_file_obj.id:
-                    return self.parent_item.child(i)
-        return None
-
-    def _get_paired_file(self):
-        """
-        Get the pair of current file, if exists
-
-        Returns:
-            str: Name of paired file
-        """
-        file_parent = self.parent_item.parent().container
-        fl_ext = self.container.name.split(".")[-1]
-        paired_ext = PAIRED_FILE_TYPES[fl_ext]
-        paired_file_name = self.container.name[: -len(fl_ext)] + paired_ext
-
-        # file definition is retrieved or a None is returned.
-        if file_parent.get_file(paired_file_name):
-            return paired_file_name
-        else:
-            return None
-
     def create_symlink(self, file_path):
         """
         Create a symbolic link to the file in its parent container directory.
 
-        This is instead of caching the file to the file_id directory.
+        This provides single-directory access to all files under a particular container.
+        The latest version gets the symbolic link.
+        Otherwise, each file is cached to a file_id directory that is based on version.
+
+        NOTE: For this to work on Windows Developer Mode must be enabled or
+              the application must be run "As Administrator".
 
         Args:
             file_path (pathlib.Path): Path to file to link to.
@@ -482,29 +452,45 @@ class FileItem(ContainerItem):
         Add file to cache directory under path.
 
         Returns:
-            pathlib.Path, str: Path to file in cache and flywheel file_type
+            pathlib.Path: Path to file in cache.
         """
         file_path = self._get_cache_path()
         file_parent = self.parent_item.parent().container
-
         if not file_path.exists():
+            msg = f"Downloading file: {self.file.name}"
+            log.info(msg)
             if not file_path.parents[0].exists():
                 os.makedirs(file_path.parents[0])
             file_parent.download_file(self.file.name, str(file_path))
-            self.icon_path = "Resources/Icons/file_cached.png"
+            self.icon_path = RESOURCE_FOLDER / "file_cached.png"
             self.setToolTip("File is cached.")
             self._set_icon()
+
+        else:
+            msg = f"File already downloaded: {self.file.name}"
+            log.info(msg)
         # Always update the symbolic link to the latest version of the file
         symlink_path = self.create_symlink(file_path)
-
-        # Check if this file is of a paired type
-        if self._is_paired_type():
-            # TODO: I could create a new FileItem object and then download it
-            #       FileItem constuctor take parent and file_obj as arguments.
-            #       ...Or could I get the file from the Tree?... with the file_id?
-            # attempt to find the paired type
-            paired_file_item = self._get_paired_file_item()
-            if paired_file_item:
-                paired_file_item._add_to_cache()
-
         return symlink_path, self.file_type
+
+    # This function belongs to Analysis Management
+    def _download_as_input(self, full_input_dir, msg_display):
+        """
+        Add file to cache directory under path.
+
+        Returns:
+            pathlib.Path: Path to file in cache.
+        """
+        file_path = full_input_dir / self.file.name
+        file_parent = self.parent_item.parent().container
+        if not file_path.exists():
+            msg = f"Downloading file: {self.file.name}"
+            log.info(msg)
+            msg_display.appendPlainText(msg)
+            if not file_path.parents[0].exists():
+                os.makedirs(file_path.parents[0])
+            file_parent.download_file(self.file.name, str(file_path))
+        else:
+            msg = f"File already downloaded: {self.file.name}"
+            log.info(msg)
+            msg_display.appendPlainText(msg)

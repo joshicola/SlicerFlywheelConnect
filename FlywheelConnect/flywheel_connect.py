@@ -18,6 +18,14 @@ from slicer.ScriptedLoadableModule import *
 
 from management.tree_management import TreeManagement
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(name)s - [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s",
+)
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
+
 #
 # flywheel_connect
 #
@@ -72,7 +80,7 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
         super(flywheel_connectWidget, self).setup()
 
         # Declare Cache path
-        self.CacheDir = os.path.expanduser("~") + "/flywheelIO/"
+        self.cache_dir = os.path.expanduser("~") + "/flywheelIO/"
 
         # #################Declare form elements#######################
 
@@ -99,13 +107,13 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
         apiKeyFormLayout.addWidget(self.logAlertTextLabel)
 
         #
-        # CacheDir Text Box
+        # cache_dir Text Box
         #
-        self.cacheDirTextLabel = qt.QLabel("Disk Cache:")
-        apiKeyFormLayout.addWidget(self.cacheDirTextLabel)
-        self.cacheDirTextBox = qt.QLineEdit()
-        self.cacheDirTextBox.setText(self.CacheDir)
-        apiKeyFormLayout.addWidget(self.cacheDirTextBox)
+        self.cache_dirTextLabel = qt.QLabel("Disk Cache:")
+        apiKeyFormLayout.addWidget(self.cache_dirTextLabel)
+        self.cache_dirTextBox = qt.QLineEdit()
+        self.cache_dirTextBox.setText(self.cache_dir)
+        apiKeyFormLayout.addWidget(self.cache_dirTextBox)
 
         #
         # Use Cache CheckBox
@@ -130,18 +138,6 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
         #
         #  collection toggle button
         #
-
-        # TODO: Remove useCollectionCheckBox after review of functionality/look/feel.
-
-        # self.useCollectionCheckBox = qt.QCheckBox("Browse Collections")
-        # self.useCollectionCheckBox.toolTip = (
-        #     """Browse Flywheel Collecions. Otherwise, browse projects."""
-        # )
-
-        # self.useCollectionCheckBox.setCheckState(False)
-        # self.useCollectionCheckBox.setTristate(False)
-
-        # dataFormLayout.addWidget(self.useCollectionCheckBox)
 
         self.radioButtonGroup = qt.QButtonGroup()
         self.useCollections = qt.QRadioButton("Browse Collections")
@@ -434,33 +430,51 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
             )
             loadedNodeIDs = DICOMLib.loadLoadables(loadablesByPlugin)
 
+    def load_slicer_file(self, file_path, file_type):
+        """
+        Load filepath based on type.
+
+        Args:
+            file_path (str): Path to file to load
+            file_type (str): String representatin of file type
+        """
+        # Check for Flywheel compressed dicom
+        if self.is_compressed_dicom(file_path, file_type):
+            try:
+                self.load_dicom_archive(file_path)
+                return True
+            except Exception as e:
+                log.error("Not a valid DICOM archive.")
+                return False
+        # Load using Slicer default node reader
+        elif not slicer.app.ioManager().loadFile(file_path):
+            log.error("Failed to read file: " + file_path)
+            return False
+        return True
+
     def onLoadFilesPushed(self):
         """
         Load tree-selected files into 3D Slicer for viewing.
         """
 
-        # If Cache not checked, delete CacheDir recursively
+        # If Cache not checked, delete cache_dir recursively
         if not self.useCacheCheckBox.checkState():
-            shutil.rmtree(self.CacheDir)
-            Path(self.CacheDir).mkdir(parents=True, exist_ok=True)
-
+            shutil.rmtree(self.cache_dir)
+            Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
+        # TODO: How to:
+        #       * Cache Paired files without loading the data file?
+        #           - If we select a header file, cache the data file
+        #           - If we have a pair selected, remove data file from cache_files
+        #           - If we have a data file selected, remove it.
+        #       * Cache all files referenced by an .mrml file?
         # Cache all selected files
         self.tree_management.cache_selected_for_open()
 
         # Walk through cached files... This could use "types"
-        for k, file_dict in self.tree_management.cache_files.items():
+        for _, file_dict in self.tree_management.cache_files.items():
             file_path = file_dict["file_path"]
             file_type = file_dict["file_type"]
-            # Check for Flywheel compressed dicom
-            if self.is_compressed_dicom(file_path, file_type):
-                try:
-                    self.load_dicom_archive(file_path)
-                    continue
-                except Exception as e:
-                    print("Not a valid DICOM archive.")
-            # Load using Slicer default node reader
-            if not slicer.app.ioManager().loadFile(file_path):
-                print("Failed to read file: " + file_path)
+            success = self.load_slicer_file(file_path, file_type)
 
     def save_analysis(self, parent_container_item, output_path):
         """
@@ -477,7 +491,7 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
         input_files_paths = [
             Path(node.GetFileName())
             for node in slicer.util.getNodesByClass("vtkMRMLStorageNode")
-            if self.CacheDir in node.GetFileName()
+            if self.cache_dir in node.GetFileName()
         ]
 
         # Represent those files as file reference from their respective parents
@@ -518,13 +532,15 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
 
         Files that already exist in the container are ignored.
 
-        TODO: Update the file version
+        TODO: Update tree to reflect that a new file version is not cached.
+        TODO: parameterize "overwrite" and connect to a checkbox.
 
         Args:
             parent_container_item (ContainerItem):  Tree Item representation of parent
                 container.
             output_path (Path): Temporary path to where Slicer files are saved.
         """
+        overwrite = True
         parent_container = self.fw_client.get(parent_container_item.data()).reload()
         parent_container_files = [fl.name for fl in parent_container.files]
         for output_file in [
@@ -532,7 +548,7 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
             for file_path in glob(str(output_path / "*"))
             if (
                 Path(file_path).is_file()
-                and Path(file_path).name not in parent_container_files
+                and (Path(file_path).name not in parent_container_files or overwrite)
             )
         ]:
             parent_container.upload_file(output_file)
@@ -546,10 +562,14 @@ class flywheel_connectWidget(ScriptedLoadableModuleWidget):
             output_path = Path(tmp_output_path)
             slicer.mrmlScene.SetRootDirectory(str(output_path))
             slicer.mrmlScene.SetURL(str(output_path / "Slicer_Scene.mrml"))
+            save_as_analysis = self.asAnalysisCheck.isChecked()
+            if not save_as_analysis:
+                for node in slicer.util.getNodesByClass("vtkMRMLStorageNode"):
+                    node.SetFileName(Path(node.GetFileName()).name)
             if slicer.util.openSaveDataDialog():
                 index = self.treeView.selectedIndexes()[0]
                 container_item = self.tree_management.source_model.itemFromIndex(index)
-                save_as_analysis = self.asAnalysisCheck.isChecked()
+
                 if save_as_analysis:
                     self.save_analysis(container_item, output_path)
                 else:
@@ -677,13 +697,27 @@ class flywheel_connectTest(ScriptedLoadableModuleTest):
         typically a scene clear will be enough.
         """
         slicer.mrmlScene.Clear(0)
+        log.setLevel(logging.DEBUG)
+        self.flywheel_connect_widget = slicer.modules.flywheel_connectWidget
+        self.root_path = Path(__file__).parents[0]
+
+    def cleanUp(self):
+        """
+        Clean up after tests.
+        """
+        slicer.mrmlScene.Clear(0)
 
     def runTest(self):
         """Run as few or as many tests as needed here."""
         self.setUp()
-        self.test_flywheel_connect1()
+        self.test_load_nifti()
+        self.test_load_compressed_dicom()
+        self.test_load_metaimage()
+        self.test_load_analyze()
+        self.test_load_NRRD()
+        self.cleanUp()
 
-    def test_flywheel_connect1(self):
+    def test_load_nifti(self):
         """Ideally you should have several levels of tests.  At the lowest level
         tests should exercise the functionality of the logic with different inputs
         (both valid and invalid).  At higher levels your tests should emulate the
@@ -695,20 +729,94 @@ class flywheel_connectTest(ScriptedLoadableModuleTest):
         your test should break so they know that the feature is needed.
         """
 
-        self.delayDisplay("Starting the test")
-        #
-        # first, get some data
-        #
-        # import SampleData
+        log.info("Test loading NIFTI files.")
+        nifti_path = self.root_path / "Testing/data/T1w_MPR.nii.gz"
+        nifti_type = "nifti"
+        succeeded = self.flywheel_connect_widget.load_slicer_file(
+            str(nifti_path), nifti_type
+        )
+        assert succeeded
 
-        # SampleData.downloadFromURL(
-        #     nodeNames="FA",
-        #     fileNames="FA.nrrd",
-        #     uris="http://slicer.kitware.com/midas3/download?items=5767",
-        # )
-        # self.delayDisplay("Finished with download and loading")
+        log.info("Test of NIFTI Load Complete!")
 
-        # volumeNode = slicer.util.getNode(pattern="FA")
-        # logic = flywheel_connectLogic()
-        # self.assertIsNotNone(logic.hasImageData(volumeNode))
-        self.delayDisplay("Test passed!")
+    def test_load_compressed_dicom(self):
+        log.info("Testing loading compressed dicoms.")
+        log.debug("Load labeled compressed dicom.zip file.")
+        file_path = str(self.root_path / "Testing/data/T1w_MPR.zip")
+        file_type = "dicom"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert suceeded
+        file_type = "not dicom"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert not suceeded
+        log.info("Suceeded loading compressed dicoms.")
+
+    def test_load_metaimage(self):
+        log.info("Testing load of metaimage files.")
+        log.debug("Load the header with the .raw file present.")
+        file_path = str(
+            self.root_path / "Testing/data/MFJK1C1F2_20200824_151907_S7to10_FWI_Fat.mhd"
+        )
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert suceeded
+
+        log.debug("Load a header without the .raw file present")
+        file_path = str(
+            self.root_path
+            / "Testing/data/MFJK1C1F2_20200824_151907_S7to10_FWI_FatPct.mhd"
+        )
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert not suceeded
+
+        log.debug("attempt to load the .raw file")
+        file_path = str(
+            self.root_path / "Testing/data/MFJK1C1F2_20200824_151907_S7to10_FWI_Fat.raw"
+        )
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert not suceeded
+        log.info("Tests of metaimage files complete.")
+
+    def test_load_analyze(self):
+        log.info("Testing load of Analyze files.")
+        log.debug("Load the header with the .img file present")
+        file_path = str(self.root_path / "Testing/data/T1w_MPR.hdr")
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert suceeded
+
+        log.debug("Load the .img without the header")
+        file_path = str(self.root_path / "Testing/data/T1w_MPR.img")
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert suceeded
+
+        log.debug("Load a .hdr without .img file")
+        file_path = str(self.root_path / "Testing/data/T1w_MPR3.hdr")
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert not suceeded
+        log.info("Tests of Analyze files complete.")
+
+    def test_load_NRRD(self):
+        log.info("Testing load of NRRD files.")
+        log.debug("Load stanalone .nrrd file")
+        file_path = str(self.root_path / "Testing/data/27 T1w_MPR.nrrd")
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert suceeded
+
+        log.debug("Load the .nhdr with data (.raw.gz) present")
+        file_path = str(self.root_path / "Testing/data/27 T1w_MPR.nhdr")
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert suceeded
+
+        log.debug("Load a .raw.gz without .nhdr file")
+        file_path = str(self.root_path / "Testing/data/27 T1w_MPR.raw.gz")
+        file_type = "file"
+        suceeded = self.flywheel_connect_widget.load_slicer_file(file_path, file_type)
+        assert not suceeded
+        log.info("Tests of NRRD files complete.")

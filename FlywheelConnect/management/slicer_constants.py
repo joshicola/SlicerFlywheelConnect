@@ -1,5 +1,5 @@
 # Common paired file types
-PAIRED_FILE_TYPES = {"mhd": "raw", "hdr": "img"}
+PAIRED_FILE_TYPES = {"mhd": "raw", "hdr": "img", ".nhdr": ".raw.gz"}
 
 # TODO: test all major volume and surface file types.
 #       Ensure tests pass for these types.
