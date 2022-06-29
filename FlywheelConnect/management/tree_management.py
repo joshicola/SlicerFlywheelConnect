@@ -237,17 +237,19 @@ class TreeManagement:
             parent_item (FolderItem): Folder item containing siblings of node
             node (dict): Dictionary representation of mrml node.
         """
+        # list all files under the container FolderItem in question
         all_file_names = [
             parent_item.child(i).text() for i in range(parent_item.rowCount())
         ]
         if node["@fileName"] in all_file_names:
             dep_index = all_file_names.index(node["@fileName"])
             dep_item = parent_item.child(dep_index)
-            dep_item._add_to_cache()
+            # Cache file without explicitly opening in Slicer
+            _, _ = dep_item._add_to_cache()
             if self._is_paired_type(dep_item):
                 paired_item = self._get_paired_file_item(dep_item)
                 if paired_item:
-                    paired_item._add_to_cache()
+                    _, _ = paired_item._add_to_cache()
         else:
             file_name = node["@fileName"]
             msg = (
@@ -290,6 +292,7 @@ class TreeManagement:
         if self._is_paired_type(file_item):
             paired_file_item = self._get_paired_file_item(file_item)
             if paired_file_item:
+                # Paired file is cached without giving it to slicer to explicity open
                 _, _ = paired_file_item._add_to_cache()
         if file_item.text().endswith(".mrml"):
             self._get_mrml_dependencies(file_item)
@@ -300,15 +303,14 @@ class TreeManagement:
         """
         tree = self.treeView
         self.cache_files.clear()
-        # TODO: This is where the finding of paired files would go
-        #       We would not want to attempt to load a .raw file.
+
         for index in tree.selectedIndexes():
             item = self.source_model.itemFromIndex(index)
             if isinstance(item, FileItem):
                 file_path, file_type = item._add_to_cache()
-
+                # A file may have dependencies to cache
+                # e.g. .mhdr/.raw or .mrml file
                 self.cache_item_dependencies(item)
-                # pair detection here.
 
                 self.cache_files[item.container.id] = {
                     "file_path": str(file_path),
