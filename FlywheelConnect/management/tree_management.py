@@ -295,6 +295,8 @@ class TreeManagement:
                 # Paired file is cached without giving it to slicer to explicity open
                 _, _ = paired_file_item._add_to_cache()
         if file_item.text().endswith(".mrml"):
+            # TODO: If mrml is the output of Analysis, load Analysis inputs into
+            #       the analysis folder directory.
             self._get_mrml_dependencies(file_item)
 
     def cache_selected_for_open(self):
