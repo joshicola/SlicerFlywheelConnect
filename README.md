@@ -19,7 +19,11 @@ The Flywheel Connect 3D Slicer Extension is now in the [3D Slicer Extension Cata
 6. By clicking on a container, slicer-derived files can be uploaded to Flywheel as
 
     * Files under a selected container
+      * If an mrml file is saved, all references are to files in the present container
+      * Loading the mrml file will cache all dependencies.
     * Files for a new Analysis object under a selected container.
+
+
 
 ## File Management
 Files will be cached to the flywheelIO/ directory of the users home directory.  This is default and can be changed. If caching files is not desired, uncheck "Cache Images".  This will delete all files in the cache between downloads.
