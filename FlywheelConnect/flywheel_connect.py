@@ -13,10 +13,24 @@ import ctk
 import DICOMLib
 import qt
 import slicer
-import vtk
-from slicer.ScriptedLoadableModule import *
+from slicer.ScriptedLoadableModule import (
+    ScriptedLoadableModule,
+    ScriptedLoadableModuleLogic,
+    ScriptedLoadableModuleTest,
+    ScriptedLoadableModuleWidget,
+)
+
+from management.utils import check_requirements
+
+# fmt: off
+# Check for and install missing requirements
+check_requirements()
+
+import flywheel
 
 from management.tree_management import TreeManagement
+
+# fmt: on
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -46,21 +60,6 @@ class flywheel_connect(ScriptedLoadableModule):
         self.parent.helpText = 'See <a href="https://github.com/flywheel-apps/SlicerFlywheelConnect">Flywheel Connect website</a> for more information.'
         self.parent.helpText += self.getDefaultModuleDocumentationLink()
         self.parent.acknowledgementText = ""
-
-        slicer.app.connect("startupCompleted()", self.on_startup_completed)
-
-    def on_startup_completed(self):
-        FlyW = ""
-        try:
-            FlyW = import_module("flywheel")
-        except ModuleNotFoundError as e:
-            if slicer.util.confirmOkCancelDisplay(
-                "Flywheel Connect requires 'flywheel-sdk' Python package. "
-                "Click OK to install it now."
-            ):
-                slicer.util.pip_install("flywheel-sdk")
-                FlyW = import_module("flywheel")
-        globals()["flywheel"] = FlyW
 
 
 #

@@ -1,3 +1,6 @@
+# Required modules that need to be present for Flywheel Connect to function
+REQUIRED_MODULES = ["flywheel-sdk", "xmltodict"]
+
 # Common paired file types
 PAIRED_FILE_TYPES = {"mhd": "raw", "hdr": "img", ".nhdr": ".raw.gz"}
 
